@@ -10,11 +10,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
 import wandb
+import os
 
 from dataset import ImageDataset
 from Transformer import Transformer
 from Decoder import Decoder
-from Encoder import Encoder, FeedForwardLayer, Attention_Layer, PositionalEncoding, IdentityEmbedding, Cross_Attention_Layer
+from Encoder import Encoder, FeedForwardLayer, PositionalEncoding, IdentityEmbedding
+from attention import Cross_Attention_Layer, Attention_Layer
 
 def validate(model, num_samples=10):
     model.eval()
@@ -219,7 +221,7 @@ def train():
         
 # train()
 
-import os
+
 # torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
 
 def load_model(model, optimizer, checkpoint_path='checkpoints/best_model.pt'):
@@ -242,24 +244,24 @@ def load_model(model, optimizer, checkpoint_path='checkpoints/best_model.pt'):
 # # After loading the model, you can also test it with a sample input
 transformer = load_model(transformer, optimizer)
 
-# def visualize_attention(attn_probs):
-#     """
-#     Visualize attention probabilities for a specific head
+def visualize_attention(attn_probs):
+    """
+    Visualize attention probabilities for a specific head
     
-#     Args:
-#         attn_probs: Tensor of shape [batch_size, num_heads, seq_len, seq_len]
-#         head: Which attention head to visualize (default=0)
-#     """
-#     # Take first batch and specified head
-#     attn_map = attn_probs.detach().cpu().numpy()
+    Args:
+        attn_probs: Tensor of shape [batch_size, num_heads, seq_len, seq_len]
+        head: Which attention head to visualize (default=0)
+    """
+    # Take first batch and specified head
+    attn_map = attn_probs.detach().cpu().numpy()
     
-#     plt.figure(figsize=(10, 10))
-#     plt.imshow(attn_map, cmap='viridis')
-#     plt.colorbar()
-#     plt.title(f'Attention Head ')
-#     plt.xlabel('Key Position')
-#     plt.ylabel('Query Position')
-#     plt.show()
+    plt.figure(figsize=(10, 10))
+    plt.imshow(attn_map, cmap='viridis')
+    plt.colorbar()
+    plt.title(f'Attention Head ')
+    plt.xlabel('Key Position')
+    plt.ylabel('Query Position')
+    plt.show()
 
 def do_test_new(model):
     image, label = generate_random_image(train_dataset)
