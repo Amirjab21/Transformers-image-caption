@@ -202,9 +202,10 @@ def train():
                     print(f"Predicted: {predicted_digits[j]} | True: {true_digits[j]}")
             
             
-             # Calculate loss for each position in the sequence
+             
             for i in range(5):  # For the 4 digits
                 batch_loss += criterion(output[:, i, :], true_indices[:, i])
+            # batch_loss = criterion(output.view(-1, output.size(-1)), true_indices.view(-1)) ALTERNATIVE LOSS FUNCTION
 
 
             progress_bar.set_postfix({"batch_loss": batch_loss.item() })
