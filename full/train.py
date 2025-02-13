@@ -18,7 +18,13 @@ from Encoder import Encoder, FeedForwardLayer, Attention_Layer, PositionalEncodi
 idx_to_token = {
     0: '0', 1: '1', 2: '2', 3: '3', 4: '4',
     5: '5', 6: '6', 7: '7', 8: '8', 9: '9',
-    10: '<START>'
+    10: '<START>', 11: "<PAD>"
+}
+
+token_to_idx = {
+    '0': 0, '1': 1, '2': 2, '3': 3, '4': 4,
+    '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+    '<START>': 10, "<PAD>": 11
 }
 
 device = torch.device("cpu")
@@ -74,7 +80,7 @@ train_dataset = load_dataset()
 dataset = create_dataset(10000, train_dataset)
 
 dataset_ready = ImageDataset(dataset)
-batch_size = 20
+batch_size = 1000
 dataloader = torch.utils.data.DataLoader(
     dataset_ready,
     batch_size=batch_size,
@@ -96,7 +102,7 @@ positional_layer_encoder = PositionalEncoding(seq_length_images,embedding_dim)
 encoder = Encoder(input_dimension_images, embedding_dim, 1, fflayer_encoder,attention_layer=attention_layer_encoder, positional_encoding=positional_layer_encoder)
 
 input_dimension_decoder = 5
-tgt_vocab_size = 11
+tgt_vocab_size = 12
 dim_model_decoder = 24
 fflayer_decoder = FeedForwardLayer(tgt_vocab_size, tgt_vocab_size)
 self_attention_layer_decoder = Attention_Layer(tgt_vocab_size, num_heads)
@@ -105,12 +111,12 @@ positional_layer_decoder = PositionalEncoding(input_dimension_decoder,tgt_vocab_
 embedding_layer_decoder = IdentityEmbedding()
 
 
-decoder = Decoder(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder)
+decoder = Decoder(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder, token_to_idx['<PAD>'])
 transformer = Transformer(embedding_dim, encoder, decoder, tgt_vocab_size)
 
 learning_rate = 0.001
 optimizer = torch.optim.SGD(transformer.parameters(), learning_rate)
-epochs = 5
+epochs = 250
 criterion = nn.CrossEntropyLoss()
 
 def train():
@@ -126,6 +132,7 @@ def train():
             
             batch_loss = 0
             image, label = batch['image'].to(device), batch['label'].to(device)
+            
             
             optimizer.zero_grad()
 
@@ -164,3 +171,99 @@ def train():
 
         
 train()
+
+# import os
+torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
+
+# def load_model(model, optimizer, checkpoint_path='checkpoints/best_model.pt'):
+#     """Load a saved model and optimizer state"""
+#     if os.path.exists(checkpoint_path):
+#         checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+#         model.load_state_dict(checkpoint['model_state_dict'])
+        
+#         # Add verification checks
+#         print(f"Model loaded from {checkpoint_path}")
+#         # Print a few parameter statistics to verify loading
+#         for name, param in model.named_parameters():
+#             if param.requires_grad:
+#                 print(f"{name}: mean={param.data.mean():.4f}, std={param.data.std():.4f}")
+#                 break  # Just print the first parameter as an example
+#         return model
+#     print(f"No checkpoint found at {checkpoint_path}")
+#     return False
+
+# # After loading the model, you can also test it with a sample input
+# transformer = load_model(transformer, optimizer)
+
+# def visualize_attention(attn_probs):
+#     """
+#     Visualize attention probabilities for a specific head
+    
+#     Args:
+#         attn_probs: Tensor of shape [batch_size, num_heads, seq_len, seq_len]
+#         head: Which attention head to visualize (default=0)
+#     """
+#     # Take first batch and specified head
+#     attn_map = attn_probs.detach().cpu().numpy()
+    
+#     plt.figure(figsize=(10, 10))
+#     plt.imshow(attn_map, cmap='viridis')
+#     plt.colorbar()
+#     plt.title(f'Attention Head ')
+#     plt.xlabel('Key Position')
+#     plt.ylabel('Query Position')
+#     plt.show()
+
+def do_test_new(model):
+    image, label = generate_random_image(train_dataset)
+
+    print(f"\nTrue labels: {label}")
+
+    patches_array = split_image_to_patches(image)
+    patches_tensor = [torch.tensor(patch.flatten(), dtype=torch.float32) for patch in patches_array]
+    image_tensor = torch.stack(patches_tensor).unsqueeze(0)  # Add batch dimension [1, 16, 196]
+    
+    model.eval()
+    current_sequence = torch.zeros((1, 5, 12))
+
+    # Initialize all positions with PAD token (index 11)
+    current_sequence[0, :, 11] = 1
+    # Set START token at position 0
+    current_sequence[0, 0, 10] = 1
+    current_sequence[0, 0, 11] = 0  # Remove PAD token from START position
+
+    predicted_indices = [10]
+    
+    # Generate one digit at a time
+    for pos in range(4):
+        # print(current_sequence)
+        output = model.forward(image_tensor, current_sequence)
+        # print(output, "ouytput")
+        output_probabilities = torch.softmax(output, dim=2)
+        # print(output_probabilities, output_probabilities[0, pos])
+        predicted_digits = torch.argmax(output_probabilities[0, pos])
+        # print(predicted_digits, output_probabilities[0, pos])
+        predicted_indices.append(predicted_digits.item())
+        # print(predicted_digits.item())
+        
+        # Update sequence for next iteration (if not last position)
+        if pos < 3:
+            current_sequence = torch.zeros((1, 5, 12))
+            # Set PAD token everywhere first
+            current_sequence[0, :, 11] = 1
+            # Set START token
+            current_sequence[0, 0, 10] = 1
+            current_sequence[0, 0, 11] = 0
+            # Add predicted digits so far
+            for i, idx in enumerate(predicted_indices[1:], start=1):
+                current_sequence[0, i, idx] = 1
+                current_sequence[0, i, 11] = 0  # Remove PAD token where we put a prediction
+    
+    # Convert to readable digits using idx_to_token
+    predicted_digits = [idx_to_token[idx] for idx in predicted_indices]
+    
+    print(f"Predicted digits: {predicted_digits}")
+
+do_test_new(transformer)
+    
+# def validation_test():

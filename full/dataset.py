@@ -3,7 +3,7 @@ import torch
 idx_to_token = {
     0: '0', 1: '1', 2: '2', 3: '3', 4: '4',
     5: '5', 6: '6', 7: '7', 8: '8', 9: '9',
-    10: '<START>'
+    10: '<START>', 11: "<PAD>"
 }
 
 def turn_to_one_hot(label_array, idx_to_token):
@@ -11,10 +11,10 @@ def turn_to_one_hot(label_array, idx_to_token):
 
     # Your existing one-hot encoding code
     label_tensor = torch.tensor(label_array)
-    one_hot = torch.nn.functional.one_hot(label_tensor, num_classes=11)
+    one_hot = torch.nn.functional.one_hot(label_tensor, num_classes=12)
 
     # Create start token
-    start_token = torch.zeros(11)
+    start_token = torch.zeros(12)
     start_token[10] = 1
 
     # Add start token to sequence

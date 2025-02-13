@@ -12,9 +12,15 @@ class Transformer(nn.Module):
         self.fc = nn.Linear(tgt_vocab_size, tgt_vocab_size)
 
     def forward(self, image, caption):
-        enc_output = self.encoder.forward(image) #does the embedding
+
+        enc_output = self.encoder.forward(image) #does t he embedding
         dec_output = self.decoder.forward(caption, enc_output)
 
         output = self.fc(dec_output)
         return output
+    
+
+    
+
+
     
