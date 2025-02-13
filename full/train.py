@@ -21,7 +21,7 @@ from attention import Cross_Attention_Layer, Attention_Layer
 def validate(model, num_samples=10):
     model.eval()
     correct = 0
-    total = num_samples * 4  # 4 digits per sample
+    total = num_samples  # 4 digits per sample
     
     with torch.no_grad():
         for _ in range(num_samples):
@@ -35,27 +35,28 @@ def validate(model, num_samples=10):
             
             predicted_indices = []
             for pos in range(5):
-                output = model.forward(image_tensor, current_sequence)
-                output_probabilities = torch.softmax(output, dim=2)
+                output_probabilities = model.forward(image_tensor, current_sequence)
+                # output_probabilities = torch.softmax(output, dim=2)
                 predicted_digit = torch.argmax(output_probabilities[0, pos])
                 predicted_indices.append(predicted_digit.item())
                 
                 if pos < 3:
                     current_sequence[0, pos + 1, predicted_digit.item()] = 1
-            
-            correct += sum(p == t for p, t in zip(predicted_indices, true_labels))
+
+            if predicted_indices[:4] == true_labels:
+                correct += 1
     
     accuracy = correct / total
 
-    wandb.init(project="mnist-transformer", config={
-        "learning_rate": learning_rate,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "embedding_dim": embedding_dim,
-        "num_heads": num_heads
-    })
+    # wandb.init(project="mnist-transformer", config={
+    #     "learning_rate": learning_rate,
+    #     "epochs": epochs,
+    #     "batch_size": batch_size,
+    #     "embedding_dim": embedding_dim,
+    #     "num_heads": num_heads
+    # })
 
-    wandb.log({"accuracy": accuracy})
+    # wandb.log({"accuracy": accuracy})
 
     print(f"Validation Accuracy: {accuracy:.2%}")
     return accuracy
@@ -162,7 +163,7 @@ transformer = Transformer(embedding_dim, encoder, decoder, tgt_vocab_size)
 learning_rate = 0.001
 optimizer = torch.optim.Adam(transformer.parameters(), learning_rate)
 epochs = 50
-criterion = nn.CrossEntropyLoss()
+criterion = nn.NLLLoss()
 
 def train():
     transformer.train()
@@ -181,13 +182,14 @@ def train():
             
             optimizer.zero_grad()
 
-            output = transformer.forward(image, label)
+            output_probabilities = transformer.forward(image, label)
 
-
+            # print(output_probabilities.shape, "output_probabilities")
             # Apply softmax across the vocabulary dimension (dim=2)
-            output_probabilities = torch.softmax(output, dim=2)
+            # output_probabilities = torch.softmax(output, dim=2)
+
             predicted_digits = torch.argmax(output_probabilities, dim=2)  # Shape: [batch_size, 4]
-            
+            # print(predicted_digits.shape, "predicted_digits")
             true_indices = torch.argmax(label[:, 1:], dim=2)  # Skip first position (START token)
             end_token = torch.full((label.size(0), 1), token_to_idx['<END>'], device=device)
             true_indices = torch.cat([true_indices, end_token], dim=1)  # Add END token
@@ -203,7 +205,9 @@ def train():
             
              # Calculate loss for each position in the sequence
             for i in range(5):  # For the 4 digits
-                batch_loss += criterion(output[:, i, :], true_indices[:, i])
+                log_probs = torch.log_softmax(output_probabilities[:, i, :], dim=-1)
+                batch_loss += criterion(log_probs, true_indices[:, i])
+                # batch_loss += criterion(output_probabilities[:, i, :], true_indices[:, i])
 
 
             progress_bar.set_postfix({"batch_loss": batch_loss.item() })
@@ -219,7 +223,7 @@ def train():
         print(f"Total {epoch + 1}/{epochs}, Loss: {total_loss / (epoch + 1):.4f}")
 
         
-# train()
+train()
 
 
 # torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
@@ -313,5 +317,5 @@ def do_test_new(model):
     
     print(f"Predicted digits: {predicted_digits}")
 
-do_test_new(transformer)
+# do_test_new(transformer)
     

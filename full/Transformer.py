@@ -10,6 +10,7 @@ class Transformer(nn.Module):
         self.decoder = decoder
 
         self.fc = nn.Linear(tgt_vocab_size, tgt_vocab_size)
+        self.softmax = nn.Softmax(dim=2)
 
     def forward(self, image, caption):
 
@@ -17,6 +18,7 @@ class Transformer(nn.Module):
         dec_output = self.decoder.forward(caption, enc_output)
 
         output = self.fc(dec_output)
+        output = self.softmax(output)
         return output
     
 
