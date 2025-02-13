@@ -21,7 +21,7 @@ from attention import Cross_Attention_Layer, Attention_Layer
 def validate(model, num_samples=10):
     model.eval()
     correct = 0
-    total = num_samples * 4  # 4 digits per sample
+    total = num_samples
     
     with torch.no_grad():
         for _ in range(num_samples):
@@ -43,7 +43,8 @@ def validate(model, num_samples=10):
                 if pos < 3:
                     current_sequence[0, pos + 1, predicted_digit.item()] = 1
             
-            correct += sum(p == t for p, t in zip(predicted_indices, true_labels))
+            if predicted_indices[:4] == true_labels:
+                correct += 1
     
     accuracy = correct / total
 
@@ -219,7 +220,7 @@ def train():
         print(f"Total {epoch + 1}/{epochs}, Loss: {total_loss / (epoch + 1):.4f}")
 
         
-# train()
+train()
 
 
 # torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
@@ -313,5 +314,5 @@ def do_test_new(model):
     
     print(f"Predicted digits: {predicted_digits}")
 
-do_test_new(transformer)
+# do_test_new(transformer)
     
