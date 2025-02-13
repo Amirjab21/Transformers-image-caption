@@ -9,22 +9,65 @@ from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
+import wandb
 
 from dataset import ImageDataset
 from Transformer import Transformer
 from Decoder import Decoder
 from Encoder import Encoder, FeedForwardLayer, Attention_Layer, PositionalEncoding, IdentityEmbedding, Cross_Attention_Layer
 
+def validate(model, num_samples=10):
+    model.eval()
+    correct = 0
+    total = num_samples * 4  # 4 digits per sample
+    
+    with torch.no_grad():
+        for _ in range(num_samples):
+            image, true_labels = generate_random_image(train_dataset)
+            patches_array = split_image_to_patches(image)
+            patches_tensor = [torch.tensor(patch.flatten(), dtype=torch.float32) for patch in patches_array]
+            image_tensor = torch.stack(patches_tensor).unsqueeze(0)
+            
+            current_sequence = torch.zeros((1, 5, 13))
+            current_sequence[0, 0, token_to_idx['<START>']] = 1
+            
+            predicted_indices = []
+            for pos in range(5):
+                output = model.forward(image_tensor, current_sequence)
+                output_probabilities = torch.softmax(output, dim=2)
+                predicted_digit = torch.argmax(output_probabilities[0, pos])
+                predicted_indices.append(predicted_digit.item())
+                
+                if pos < 3:
+                    current_sequence[0, pos + 1, predicted_digit.item()] = 1
+            
+            correct += sum(p == t for p, t in zip(predicted_indices, true_labels))
+    
+    accuracy = correct / total
+
+    wandb.init(project="mnist-transformer", config={
+        "learning_rate": learning_rate,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "embedding_dim": embedding_dim,
+        "num_heads": num_heads
+    })
+
+    wandb.log({"accuracy": accuracy})
+
+    print(f"Validation Accuracy: {accuracy:.2%}")
+    return accuracy
+
 idx_to_token = {
     0: '0', 1: '1', 2: '2', 3: '3', 4: '4',
     5: '5', 6: '6', 7: '7', 8: '8', 9: '9',
-    10: '<START>', 11: "<PAD>"
+    10: '<START>', 11: "<PAD>", 12: '<END>'
 }
 
 token_to_idx = {
     '0': 0, '1': 1, '2': 2, '3': 3, '4': 4,
     '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
-    '<START>': 10, "<PAD>": 11
+    '<START>': 10, "<PAD>": 11, '<END>': 12
 }
 
 device = torch.device("cpu")
@@ -80,7 +123,7 @@ train_dataset = load_dataset()
 dataset = create_dataset(10000, train_dataset)
 
 dataset_ready = ImageDataset(dataset)
-batch_size = 1000
+batch_size = 512
 dataloader = torch.utils.data.DataLoader(
     dataset_ready,
     batch_size=batch_size,
@@ -102,7 +145,7 @@ positional_layer_encoder = PositionalEncoding(seq_length_images,embedding_dim)
 encoder = Encoder(input_dimension_images, embedding_dim, 1, fflayer_encoder,attention_layer=attention_layer_encoder, positional_encoding=positional_layer_encoder)
 
 input_dimension_decoder = 5
-tgt_vocab_size = 12
+tgt_vocab_size = 13
 dim_model_decoder = 24
 fflayer_decoder = FeedForwardLayer(tgt_vocab_size, tgt_vocab_size)
 self_attention_layer_decoder = Attention_Layer(tgt_vocab_size, num_heads)
@@ -115,8 +158,8 @@ decoder = Decoder(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_l
 transformer = Transformer(embedding_dim, encoder, decoder, tgt_vocab_size)
 
 learning_rate = 0.001
-optimizer = torch.optim.SGD(transformer.parameters(), learning_rate)
-epochs = 250
+optimizer = torch.optim.Adam(transformer.parameters(), learning_rate)
+epochs = 50
 criterion = nn.CrossEntropyLoss()
 
 def train():
@@ -132,7 +175,7 @@ def train():
             
             batch_loss = 0
             image, label = batch['image'].to(device), batch['label'].to(device)
-            
+            # print(image[0], label[0])
             
             optimizer.zero_grad()
 
@@ -142,7 +185,11 @@ def train():
             # Apply softmax across the vocabulary dimension (dim=2)
             output_probabilities = torch.softmax(output, dim=2)
             predicted_digits = torch.argmax(output_probabilities, dim=2)  # Shape: [batch_size, 4]
-            true_indices = torch.argmax(label, dim=2)  # Convert one-hot to indices
+            
+            true_indices = torch.argmax(label[:, 1:], dim=2)  # Skip first position (START token)
+            end_token = torch.full((label.size(0), 1), token_to_idx['<END>'], device=device)
+            true_indices = torch.cat([true_indices, end_token], dim=1)  # Add END token
+            # print(true_indices[0])
 
             predicted_digits = [[idx_to_token[idx.item()] for idx in pred] for pred in predicted_digits]
             true_digits = [[idx_to_token[idx.item()] for idx in true] for true in true_indices]
@@ -153,47 +200,47 @@ def train():
             
             
              # Calculate loss for each position in the sequence
-            for i in range(4):  # For the 4 digits
-                batch_loss += criterion(output[:, i, :], label[:, i])
+            for i in range(5):  # For the 4 digits
+                batch_loss += criterion(output[:, i, :], true_indices[:, i])
 
 
-            progress_bar.set_postfix({"batch_loss": batch_loss.item() /  batch_size})
+            progress_bar.set_postfix({"batch_loss": batch_loss.item() })
 
             epoch_loss += batch_loss.item()
             total_loss += batch_loss.item()
             batch_loss.backward()
             optimizer.step()
-        
+        validate(transformer,100)
         epoch_loss = epoch_loss / len(dataloader.dataset)
         # total_loss += epoch_loss
-        print(f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss:.4f}")
+        # print(f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss:.4f}")
         print(f"Total {epoch + 1}/{epochs}, Loss: {total_loss / (epoch + 1):.4f}")
 
         
-train()
+# train()
 
-# import os
-torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
+import os
+# torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
 
-# def load_model(model, optimizer, checkpoint_path='checkpoints/best_model.pt'):
-#     """Load a saved model and optimizer state"""
-#     if os.path.exists(checkpoint_path):
-#         checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
-#         model.load_state_dict(checkpoint['model_state_dict'])
+def load_model(model, optimizer, checkpoint_path='checkpoints/best_model.pt'):
+    """Load a saved model and optimizer state"""
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'])
         
-#         # Add verification checks
-#         print(f"Model loaded from {checkpoint_path}")
-#         # Print a few parameter statistics to verify loading
-#         for name, param in model.named_parameters():
-#             if param.requires_grad:
-#                 print(f"{name}: mean={param.data.mean():.4f}, std={param.data.std():.4f}")
-#                 break  # Just print the first parameter as an example
-#         return model
-#     print(f"No checkpoint found at {checkpoint_path}")
-#     return False
+        # Add verification checks
+        print(f"Model loaded from {checkpoint_path}")
+        # Print a few parameter statistics to verify loading
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                print(f"{name}: mean={param.data.mean():.4f}, std={param.data.std():.4f}")
+                break  # Just print the first parameter as an example
+        return model
+    print(f"No checkpoint found at {checkpoint_path}")
+    return False
 
 # # After loading the model, you can also test it with a sample input
-# transformer = load_model(transformer, optimizer)
+transformer = load_model(transformer, optimizer)
 
 # def visualize_attention(attn_probs):
 #     """
@@ -224,7 +271,7 @@ def do_test_new(model):
     image_tensor = torch.stack(patches_tensor).unsqueeze(0)  # Add batch dimension [1, 16, 196]
     
     model.eval()
-    current_sequence = torch.zeros((1, 5, 12))
+    current_sequence = torch.zeros((1, 5, 13))
 
     # Initialize all positions with PAD token (index 11)
     current_sequence[0, :, 11] = 1
@@ -248,7 +295,7 @@ def do_test_new(model):
         
         # Update sequence for next iteration (if not last position)
         if pos < 3:
-            current_sequence = torch.zeros((1, 5, 12))
+            current_sequence = torch.zeros((1, 5, 13))
             # Set PAD token everywhere first
             current_sequence[0, :, 11] = 1
             # Set START token
@@ -266,4 +313,3 @@ def do_test_new(model):
 
 do_test_new(transformer)
     
-# def validation_test():
