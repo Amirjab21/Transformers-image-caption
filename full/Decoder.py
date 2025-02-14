@@ -35,20 +35,10 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-     def __init__(self, input_dim, tgt_vocab_size, intermediate_attn_dim, n_loops, feed_forward, self_attn_layer, cross_attn_layer, positional_encoding, embedding_layer, pad_token, layer):
+     def __init__(self, tgt_vocab_size, pad_token, embedding_layer, layer, n_loops):
         super(Decoder, self).__init__()
         self.embedding_layer = embedding_layer
-        self.positional_encoding = positional_encoding
-        self.self_attn_layer = self_attn_layer
-        self.cross_attn_layer = cross_attn_layer
-        self.FF_layer = feed_forward
-        self.tgt_vocab_size = tgt_vocab_size
-        self.input_dim = input_dim
-        self.n_loops = n_loops
         self.pad_token = pad_token
-
-        self.projectbacktovocab = torch.nn.Linear(intermediate_attn_dim, tgt_vocab_size)
-
         self.norm1 = torch.nn.LayerNorm(tgt_vocab_size)
         self.layers = clones(layer, n_loops)
 

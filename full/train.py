@@ -160,7 +160,7 @@ positional_layer_decoder = PositionalEncoding(input_dimension_decoder,tgt_vocab_
 embedding_layer_decoder = IdentityEmbedding()
 
 decoder_layer = DecoderLayer(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder, token_to_idx['<PAD>'])
-decoder = Decoder(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder, token_to_idx['<PAD>'], decoder_layer)
+decoder = Decoder(tgt_vocab_size, token_to_idx['<PAD>'], embedding_layer_decoder, decoder_layer, n_loops)
 transformer = Transformer(embedding_dim, encoder, decoder, tgt_vocab_size)
 
 learning_rate = 0.001
