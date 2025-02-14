@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
 import math
-
+import copy
 class IdentityEmbedding(nn.Module):
     def __init__(self):
         super().__init__()
-        # self.linear = nn.Linear(input_dim, embedding_dim)
     
     def forward(self, x):
         return x
@@ -42,73 +41,51 @@ class FeedForwardLayer(nn.Module):
     
     def forward(self, x):
         return self.ff2(self.relu(self.ff1(x)))
+    
 
 
-
-class Encoder(nn.Module):
-    def __init__(self, input_dim, embedding_dim, n_loops, feed_forward, attention_layer, positional_encoding):
-        super(Encoder, self).__init__()
-        self.embedding_layer = Embedding_Layer(input_dim, embedding_dim)
+class EncoderLayer(nn.Module):
+    def __init__(self, embedding_dim, positional_encoding, attention_layer, feed_forward, input_dim):
+        super(EncoderLayer, self).__init__()
         self.positional_encoding = positional_encoding
         self.attn_layer = attention_layer
         self.FF_layer = feed_forward
         self.embedding_dim = embedding_dim
         self.input_dim = input_dim
-        self.n_loops = n_loops
 
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
         self.norm2 = torch.nn.LayerNorm(embedding_dim)
 
-
-        #remove below when doing full model
-        self.intermediate = torch.nn.Linear(64*16, 40)
-        self.relu = torch.nn.ReLU()
-        self.flatten = torch.nn.Flatten()
-        self.final = torch.nn.Linear(40, 40)
-    
-    def get_qkv(self, q_input, k_input, v_input, embedding_dim):
-        query = torch.nn.Linear(q_input.size(-1), embedding_dim)
-        key = torch.nn.Linear(k_input.size(-1), embedding_dim)
-        value = torch.nn.Linear(v_input.size(-1), embedding_dim)
-        return query, key, value
-
     
     def forward(self, x):
-        embedding = self.embedding_layer(x)
+        embedding = self.positional_encoding(x)
 
-        embedding = self.positional_encoding(embedding)
-
-        # for i in range(self.n_loops): #To do, to add loops, we must clone Encoder layers which consist of ff + attn
-        # query, key, value = self.get_qkv(x, x, x, self.embedding_dim)
         attn, prob = self.attn_layer.forward(embedding, embedding, embedding, None)
         x = self.norm1(embedding + attn)
         ff_output = self.FF_layer(x)
         x = self.norm2(x + ff_output)
 
         return x
+
+def clones(module, N):
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+
+class Encoder(nn.Module):
+    def __init__(self, input_dim, embedding_dim, n_loops, layer):
+        super(Encoder, self).__init__()
+        self.embedding_layer = Embedding_Layer(input_dim, embedding_dim)
+        self.layers = clones(layer, n_loops)
+        self.norm1 = torch.nn.LayerNorm(embedding_dim)
+        self.encoder_layers = clones(layer, n_loops)
     
-    def predict_single_integer(self, x):
-        if len(x.shape) == 2:  # Single instance case [16, 64]
-            x = x.unsqueeze(0)  # Add batch dimension [1, 16, 64]
-        
-        # Now x is [batch, 16, 64] in both cases
-        x = x.reshape(x.size(0), -1)  # Flatten to [batch, 1024]
-        flatten = self.flatten(x)
-        x = self.intermediate(flatten)
-        x = self.relu(x)
-        return self.final(x)
+    def forward(self, x):
+        "Pass the input (and mask) through each layer in turn."
+        x = self.embedding_layer(x)
+        for layer in self.layers:
+            x = layer(x)
+        return self.norm1(x)
     
-    def predict_numbers(self, x):
-        if len(x.shape) == 2:  # Single instance case [16, 64]
-            x = x.unsqueeze(0)  # Add batch dimension [1, 16, 64]
-        
-        # Now x is [batch, 16, 64] in both cases
-        x = x.reshape(x.size(0), -1)  # Flatten to [batch, 1024]
-        flatten = self.flatten(x)
-        x = self.intermediate(flatten)
-        x = self.relu(x)
-        x = self.final(x)
-        # Reshape to [batch, 4, 10] for 4 digit predictions
-        return x.view(x.size(0), 4, 10)
 
 

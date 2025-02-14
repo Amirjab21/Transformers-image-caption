@@ -15,7 +15,8 @@ import os
 from dataset import ImageDataset
 from Transformer import Transformer
 from Decoder import Decoder
-from Encoder import Encoder, FeedForwardLayer, PositionalEncoding, IdentityEmbedding
+from Encoder import Encoder, FeedForwardLayer, PositionalEncoding, IdentityEmbedding, EncoderLayer
+from Decoder import DecoderLayer
 from attention import Cross_Attention_Layer, Attention_Layer
 
 def validate(model, num_samples=10):
@@ -145,7 +146,9 @@ n_loops = 1
 fflayer_encoder = FeedForwardLayer(embedding_dim, hidden_layer_dimension)
 attention_layer_encoder = Attention_Layer(embedding_dim, num_heads)
 positional_layer_encoder = PositionalEncoding(seq_length_images,embedding_dim)
-encoder = Encoder(input_dimension_images, embedding_dim, 1, fflayer_encoder,attention_layer=attention_layer_encoder, positional_encoding=positional_layer_encoder)
+
+encoder_layer = EncoderLayer(embedding_dim, positional_layer_encoder, attention_layer_encoder, fflayer_encoder, input_dimension_images)
+encoder = Encoder(input_dimension_images, embedding_dim, n_loops, encoder_layer)
 
 input_dimension_decoder = 5
 tgt_vocab_size = 13
@@ -156,8 +159,8 @@ cross_attention_layer_decoder = Cross_Attention_Layer(embedding_dim, tgt_vocab_s
 positional_layer_decoder = PositionalEncoding(input_dimension_decoder,tgt_vocab_size)
 embedding_layer_decoder = IdentityEmbedding()
 
-
-decoder = Decoder(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder, token_to_idx['<PAD>'])
+decoder_layer = DecoderLayer(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder, token_to_idx['<PAD>'])
+decoder = Decoder(input_dimension_decoder,tgt_vocab_size, dim_model_decoder, n_loops, fflayer_decoder, self_attention_layer_decoder, cross_attention_layer_decoder, positional_layer_decoder, embedding_layer_decoder, token_to_idx['<PAD>'], decoder_layer)
 transformer = Transformer(embedding_dim, encoder, decoder, tgt_vocab_size)
 
 learning_rate = 0.001
