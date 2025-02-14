@@ -19,6 +19,20 @@ from Encoder import Encoder, FeedForwardLayer, PositionalEncoding, IdentityEmbed
 from Decoder import DecoderLayer
 from attention import Cross_Attention_Layer, Attention_Layer
 
+def generate_random_image(train_dataset):
+    images = []
+    labels = []
+    for _ in range(4):
+        idx = torch.randint(len(train_dataset), size=(1,)).item()
+        img, label = train_dataset[idx]
+        images.append(img.squeeze().numpy())
+        labels.append(label)
+    top_row = np.concatenate([images[0], images[1]], axis=1)
+    bottom_row = np.concatenate([images[2], images[3]], axis=1)
+    final_image = np.concatenate([top_row, bottom_row], axis=0)
+    return final_image, labels
+
+
 def validate(model, num_samples=10):
     model.eval()
     correct = 0
@@ -89,20 +103,63 @@ def load_dataset():
                              )
     return train_dataset
 
-def generate_random_image(train_dataset):
+
+
+def turn_to_one_hot(label_array, idx_to_token):
+    token_to_idx = {v: k for k, v in idx_to_token.items()}
+
+    # Your existing one-hot encoding code
+    label_tensor = torch.tensor(label_array)
+    one_hot = torch.nn.functional.one_hot(label_tensor, num_classes=13)
+
+    # Create start token
+    start_token = torch.zeros(13)
+    start_token[10] = 1
+    start_token = start_token.unsqueeze(0)
+    one_hot = one_hot.squeeze(1)
+    # Add start token to sequence
+    sequence_with_start = torch.vstack([start_token, one_hot])
+    return sequence_with_start
+
+def generate_random_image_batch(batch_size=512, batch=None):
     images = []
     labels = []
+    # print(batch, "batch")
     for _ in range(4):
-        idx = torch.randint(len(train_dataset), size=(1,)).item()
-        img, label = train_dataset[idx]
-        images.append(img.squeeze().numpy())
+        idx = torch.randint(len(batch), size=(1,)).item()
+        img, label = batch[idx]['image'], batch[idx]['label']
+        
+        images.append(img)
         labels.append(label)
-
-# Concatenate images into a 2x2 grid
+        
+        # Concatenate images into a 2x2 grid
     top_row = np.concatenate([images[0], images[1]], axis=1)
     bottom_row = np.concatenate([images[2], images[3]], axis=1)
     final_image = np.concatenate([top_row, bottom_row], axis=0)
     return final_image, labels
+
+def collate_fn(batch):
+    all_images = []
+    all_labels = []
+    # print(batch[0], "batch")
+    for _ in range(len(batch)):
+        image, labels = generate_random_image_batch(batch_size,batch)
+        
+        # Process each image individually and combine results
+        patches_array = split_image_to_patches(image)
+        patches_tensor = [torch.tensor(patch.flatten(), dtype=torch.float32) for patch in patches_array]
+        image_tensor = torch.stack(patches_tensor)
+        
+        label_tensor = turn_to_one_hot(labels, idx_to_token)
+        label_tensor = torch.tensor(label_tensor, dtype=torch.long)
+        
+        all_images.append(image_tensor)
+        all_labels.append(label_tensor)
+    
+    return {
+        'image': torch.stack(all_images),
+        'label': torch.stack(all_labels)
+    }
 
 def split_image_to_patches(image):
     blocks = []  # Initialize empty list to store blocks
@@ -118,13 +175,14 @@ def create_dataset(num_images, train_dataset):
     dataset = []
     
     for _ in range(num_images):
-        image, labels = generate_random_image(train_dataset)
-        dataset.append((image, labels))
+        idx = torch.randint(len(train_dataset), size=(1,)).item()
+        image, label = train_dataset[idx]
+        dataset.append((image.squeeze().numpy(), [label]))
     
     return dataset
 
 train_dataset = load_dataset()
-dataset = create_dataset(10000, train_dataset)
+dataset = create_dataset(30000, train_dataset)
 
 dataset_ready = ImageDataset(dataset)
 batch_size = 512
@@ -132,6 +190,7 @@ dataloader = torch.utils.data.DataLoader(
     dataset_ready,
     batch_size=batch_size,
     shuffle=True,
+    collate_fn=collate_fn
 )
 
 
@@ -165,7 +224,7 @@ transformer = Transformer(embedding_dim, encoder, decoder, tgt_vocab_size)
 
 learning_rate = 0.001
 optimizer = torch.optim.Adam(transformer.parameters(), learning_rate)
-epochs = 50
+epochs = 25
 criterion = nn.CrossEntropyLoss()
 
 def train():
@@ -181,6 +240,7 @@ def train():
             
             batch_loss = 0
             image, label = batch['image'].to(device), batch['label'].to(device)
+            # print(image[0], label[0])
             # print(image[0], label[0])
             
             optimizer.zero_grad()
@@ -224,7 +284,7 @@ def train():
         print(f"Total {epoch + 1}/{epochs}, Loss: {total_loss / (epoch + 1):.4f}")
 
         
-train()
+# train()
 
 
 # torch.save({ 'model_state_dict': transformer.state_dict()}, 'checkpoints/best_model.pt')
@@ -319,4 +379,107 @@ def do_test_new(model):
     print(f"Predicted digits: {predicted_digits}")
 
 # do_test_new(transformer)
+from PIL import Image
+
+def predict_from_png(model, image_path):
+    """
+    Takes a PNG image file, processes it, and returns predictions using the transformer model
     
+    Args:
+        model: The trained transformer model
+        image_path: Path to the PNG image file
+    
+    Returns:
+        predicted_digits: List of predicted digits
+    """
+    # Load and preprocess the image
+    transform = transforms.Compose([
+        transforms.Grayscale(),  # Convert to grayscale
+        transforms.Resize((28, 28)),  # Resize to MNIST size
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))  # MNIST normalization
+    ])
+    
+    # Load image
+    image = Image.open(image_path)
+    image = transform(image).squeeze().numpy()
+    
+    # Visualize the initial processed 28x28 image
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)
+    plt.imshow(image, cmap='gray')
+    plt.title('Single Processed Image (28x28)')
+    
+    # Create 2x2 grid
+    full_image = np.zeros((56, 56))
+    full_image[0:28, 0:28] = image
+    full_image[0:28, 28:56] = image
+    full_image[28:56, 0:28] = image
+    full_image[28:56, 28:56] = image
+    
+    # Visualize the 2x2 grid
+    plt.subplot(1, 2, 2)
+    plt.imshow(full_image, cmap='gray')
+    plt.title('2x2 Grid (56x56)')
+    plt.show()
+    
+    # Visualize the 16 patches (optional)
+    patches_array = split_image_to_patches(full_image)
+    fig, axes = plt.subplots(4, 4, figsize=(10, 10))
+    for i in range(4):
+        for j in range(4):
+            idx = i * 4 + j
+            axes[i, j].imshow(patches_array[idx], cmap='gray')
+            axes[i, j].axis('off')
+    plt.suptitle('16 Patches (14x14 each)')
+    plt.show()
+    
+    # Process image
+    patches_array = split_image_to_patches(full_image)
+    patches_tensor = [torch.tensor(patch.flatten(), dtype=torch.float32) for patch in patches_array]
+    image_tensor = torch.stack(patches_tensor).unsqueeze(0)  # Add batch dimension [1, 16, 196]
+    
+
+    # Prepare model and sequence
+    model.eval()
+    current_sequence = torch.zeros((1, 5, 13))
+
+    # Initialize all positions with PAD token (index 11)
+    current_sequence[0, :, 11] = 1
+    # Set START token at position 0
+    current_sequence[0, 0, 10] = 1
+    current_sequence[0, 0, 11] = 0  # Remove PAD token from START position
+
+    predicted_indices = [10]
+    
+    # Generate one digit at a time
+    for pos in range(4):
+        # print(current_sequence)
+        output = model.forward(image_tensor, current_sequence)
+        # print(output, "ouytput")
+        output_probabilities = torch.softmax(output, dim=2)
+        # print(output_probabilities, output_probabilities[0, pos])
+        predicted_digits = torch.argmax(output_probabilities[0, pos])
+        # print(predicted_digits, output_probabilities[0, pos])
+        predicted_indices.append(predicted_digits.item())
+        # print(predicted_digits.item())
+        
+        # Update sequence for next iteration (if not last position)
+        if pos < 3:
+            current_sequence = torch.zeros((1, 5, 13))
+            # Set PAD token everywhere first
+            current_sequence[0, :, 11] = 1
+            # Set START token
+            current_sequence[0, 0, 10] = 1
+            current_sequence[0, 0, 11] = 0
+            # Add predicted digits so far
+            for i, idx in enumerate(predicted_indices[1:], start=1):
+                current_sequence[0, i, idx] = 1
+                current_sequence[0, i, 11] = 0  # Remove PAD token where we put a prediction
+    
+    # Convert to readable digits using idx_to_token
+    predicted_digits = [idx_to_token[idx] for idx in predicted_indices]
+    
+    print(f"Predicted digits: {predicted_digits}")
+
+# print(predict_from_png(transformer, "first.png"))

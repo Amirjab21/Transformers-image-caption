@@ -31,17 +31,17 @@ class ImageDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         image, label = self.image_label_pairs[idx]
         
-        patches_array = self.split_image_to_patches(image)
-        patches_tensor = [torch.tensor(patch.flatten(), dtype=torch.float32) for patch in patches_array] #array of 16 with each tensor[196]
-        image_tensor = torch.stack(patches_tensor) # tensor [16,196]
-        label_tensor = turn_to_one_hot(label, idx_to_token)
+        # patches_array = self.split_image_to_patches(image)
+        # patches_tensor = [torch.tensor(patch.flatten(), dtype=torch.float32) for patch in patches_array] #array of 16 with each tensor[196]
+        # image_tensor = torch.stack(patches_tensor) # tensor [16,196]
+        # label_tensor = turn_to_one_hot(label, idx_to_token)
         #turn label array of integers into tensor:
         # label_tensor = torch.tensor(label, dtype=torch.long)
         
         
         return {
-            'image': image_tensor,
-            'label': label_tensor,
+            'image': image,
+            'label': label,
         }
     
     def split_image_to_patches(self, image):
@@ -53,3 +53,4 @@ class ImageDataset(torch.utils.data.Dataset):
                 block = image[i*14:(i+1)*14, j*14:(j+1)*14]
                 blocks.append(block)  # Add block to our list
         return blocks
+    
